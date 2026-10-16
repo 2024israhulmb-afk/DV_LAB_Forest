@@ -789,3 +789,348 @@ def plot_tiers_summary(tiers_df: pd.DataFrame) -> go.Figure:
     )
     return fig
 
+
+# ==============================================================================
+# STAGE 3 VISUALIZATION BUILDERS
+# ==============================================================================
+
+def plot_disturbance_time_series(ts_df: pd.DataFrame, category: str = "All") -> go.Figure:
+    """
+    Renders longitudinal disturbance trend chart (2000-2023) in Million hectares.
+    Supports viewing all categories or isolating specific disturbances (fire, insects, weather, disease).
+    """
+    if ts_df.empty:
+        fig = go.Figure()
+        _apply_common_layout(fig, "Forest Disturbance Trends (2000-2023)", "Year", "Disturbed Area (Million ha)")
+        fig.add_annotation(text="No disturbance data available for current selection.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    fig = go.Figure()
+    years = ts_df['year'].tolist()
+
+    color_map = {
+        '5b_fire_forest': ('#dc2626', 'Burned Forest Area'),
+        '5a_insect': ('#d97706', 'Insect Disturbances'),
+        '5a_weather': ('#2563eb', 'Extreme Weather Events'),
+        '5a_diseases': ('#7c3aed', 'Forest Diseases'),
+        '5a_other': ('#64748b', 'Other Disturbances')
+    }
+
+    if category == "All" or category == "All Disturbance Categories":
+        for col, (color, label) in color_map.items():
+            col_mha = col + '_mha'
+            if col_mha in ts_df.columns:
+                fig.add_trace(go.Scatter(
+                    x=years,
+                    y=ts_df[col_mha],
+                    mode='lines+markers',
+                    name=label,
+                    line=dict(color=color, width=2.5),
+                    marker=dict(size=6),
+                    hovertemplate=f"<b>{label}</b><br>Year %{{x}}: %{{y:,.2f}} M ha<extra></extra>"
+                ))
+        title = "Longitudinal Forest Disturbance Trends by Category (2000 - 2023)"
+    else:
+        # Find matching column
+        inv_map = {v[1]: k for k, v in color_map.items()}
+        target_col = inv_map.get(category, '5b_fire_forest')
+        col_mha = target_col + '_mha'
+        color, label = color_map.get(target_col, ('#dc2626', category))
+        
+        if col_mha in ts_df.columns:
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=ts_df[col_mha],
+                mode='lines+markers',
+                name=label,
+                line=dict(color=color, width=3.5),
+                marker=dict(size=8, color=color, line=dict(color='#ffffff', width=2)),
+                fill='tozeroy',
+                fillcolor='rgba(220, 38, 38, 0.08)' if target_col == '5b_fire_forest' else 'rgba(45, 106, 79, 0.08)',
+                hovertemplate=f"<b>{label}</b><br>Year %{{x}}: %{{y:,.2f}} M ha<extra></extra>"
+            ))
+        title = f"{label} Annual Trend (2000 - 2023)"
+
+    _apply_common_layout(fig, title, "Reporting Year", "Reported Area (Million ha)")
+    fig.update_xaxes(tickmode='linear', dtick=2)
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    return fig
+
+
+def plot_disturbance_country_ranking(rank_df: pd.DataFrame, indicator_label: str, year_label: str) -> go.Figure:
+    """
+    Renders horizontal bar chart ranking top countries affected by a selected disturbance.
+    """
+    if rank_df.empty:
+        fig = go.Figure()
+        _apply_common_layout(fig, f"Top Countries by {indicator_label}", "Area (Million ha)", "")
+        fig.add_annotation(text="No country-level disturbance records found.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    # Ascending sort for horizontal bar layout
+    plot_data = rank_df.sort_values(by='disturbance_mha', ascending=True).copy()
+    bar_color = '#dc2626' if "Fire" in indicator_label or "Burned" in indicator_label else '#d97706' if "Insect" in indicator_label else '#2563eb'
+
+    fig = go.Figure(go.Bar(
+        x=plot_data['disturbance_mha'],
+        y=plot_data['name'],
+        orientation='h',
+        marker=dict(color=bar_color, line=dict(color='rgba(0,0,0,0.15)', width=1)),
+        customdata=plot_data['regions'],
+        hovertemplate="<b>%{y}</b> (%{customdata})<br>Reported Area: <b>%{x:,.2f} M ha</b><extra></extra>"
+    ))
+
+    _apply_common_layout(
+        fig, 
+        f"Top {len(plot_data)} Countries by {indicator_label} ({year_label})", 
+        "Reported Area (Million ha)", 
+        ""
+    )
+    return fig
+
+
+def plot_disturbance_category_breakdown(kpis: dict, title_suffix: str = "") -> go.Figure:
+    """
+    Renders donut chart comparing disturbance categories (Fire, Insects, Weather, Disease, Other).
+    """
+    labels = ['Burned Forest Area', 'Insect Disturbances', 'Extreme Weather Events', 'Forest Diseases', 'Other Disturbances']
+    values = [
+        kpis.get('total_fire_mha', 0.0),
+        kpis.get('total_insect_mha', 0.0),
+        kpis.get('total_weather_mha', 0.0),
+        kpis.get('total_disease_mha', 0.0),
+        kpis.get('total_other_mha', 0.0)
+    ]
+    
+    total = sum(values)
+    if total <= 0:
+        fig = go.Figure()
+        _apply_common_layout(fig, "Disturbance Category Composition", "", "")
+        fig.add_annotation(text="No disturbance volume reported for current selection.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    colors = ['#dc2626', '#d97706', '#2563eb', '#7c3aed', '#64748b']
+
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.52,
+        marker=dict(colors=colors, line=dict(color='#ffffff', width=2)),
+        textinfo='percent',
+        hovertemplate="<b>%{label}</b><br>Volume: <b>%{value:,.2f} M ha</b> (%{percent})<extra></extra>"
+    )])
+
+    _apply_common_layout(fig, f"Reported Disturbance Composition {title_suffix}", "", "")
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+        annotations=[dict(text=f"Total<br><b>{total:,.1f} M ha</b>", x=0.5, y=0.5, font_size=13, font_family="Inter, sans-serif", showarrow=False)]
+    )
+    return fig
+
+
+def plot_degradation_governance_charts(deg_profile: dict) -> go.Figure:
+    """
+    Renders comparison chart showing National Definition vs Degradation Monitoring adoption.
+    """
+    if not deg_profile or 'definition_counts' not in deg_profile:
+        fig = go.Figure()
+        _apply_common_layout(fig, "Forest Degradation Institutional Framework", "", "")
+        fig.add_annotation(text="Degradation profile unavailable.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    def_c = deg_profile['definition_counts']
+    mon_c = deg_profile['monitoring_counts']
+
+    categories = ['National Definition Exists', 'Country Monitors Degradation']
+    yes_vals = [def_c.get('Yes', 0), mon_c.get('Yes', 0)]
+    no_vals = [def_c.get('No', 0), mon_c.get('No', 0)]
+    unreported_vals = [def_c.get('Unreported', 0), mon_c.get('Unreported', 0)]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name='Adopted / Yes',
+        x=categories,
+        y=yes_vals,
+        marker_color='#2d6a4f',
+        text=[f"{v} ({v/236*100:.1f}%)" for v in yes_vals],
+        textposition='auto'
+    ))
+    fig.add_trace(go.Bar(
+        name='Not Adopted / No',
+        x=categories,
+        y=no_vals,
+        marker_color='#d97706',
+        text=[f"{v} ({v/236*100:.1f}%)" for v in no_vals],
+        textposition='auto'
+    ))
+    fig.add_trace(go.Bar(
+        name='Unreported / Desk',
+        x=categories,
+        y=unreported_vals,
+        marker_color='#cbd5e1',
+        text=[f"{v} ({v/236*100:.1f}%)" for v in unreported_vals],
+        textposition='auto'
+    ))
+
+    _apply_common_layout(
+        fig, 
+        "Global Status of National Forest Degradation Frameworks (236 Countries)", 
+        "", 
+        "Number of Countries"
+    )
+    fig.update_layout(
+        barmode='group',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+
+def plot_degradation_methods_bar(methods_df: pd.DataFrame) -> go.Figure:
+    """
+    Renders horizontal bar chart of degradation monitoring methods applied.
+    """
+    if methods_df.empty:
+        fig = go.Figure()
+        _apply_common_layout(fig, "Degradation Monitoring Methodologies", "", "")
+        fig.add_annotation(text="No monitoring methodologies reported.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    # Human-readable labels for methods
+    label_map = {
+        'fieldInventoryAndObservations': 'Field Inventory & Sample Observations',
+        'remoteSensingSurvey': 'Sample-Based Remote Sensing Survey',
+        'wallToWallRemoteSensingMapping': 'Wall-to-Wall Satellite Remote Sensing',
+        'expertOpinion': 'Expert Opinion / Consultation',
+        'forestManagementPlanReport': 'Forest Management Plan Reports',
+        'productionHarvestData': 'Production & Timber Harvest Records',
+        'underDevelopment': 'Methodology Under Development',
+        'other': 'Other Specialized Methodologies'
+    }
+
+    plot_df = methods_df.copy()
+    plot_df['Method_Label'] = plot_df['Method'].map(lambda x: label_map.get(x, x.replace('_', ' ').title()))
+    plot_df = plot_df.sort_values(by='Count', ascending=True)
+
+    fig = go.Figure(go.Bar(
+        x=plot_df['Count'],
+        y=plot_df['Method_Label'],
+        orientation='h',
+        marker=dict(
+            color='#1b4332',
+            line=dict(color='#081c15', width=1)
+        ),
+        hovertemplate="<b>%{y}</b><br>Countries Utilizing: <b>%{x}</b><extra></extra>"
+    ))
+
+    _apply_common_layout(
+        fig, 
+        "Reported Methodologies Applied to Monitor Forest Degradation", 
+        "Number of Countries Applying Methodology", 
+        ""
+    )
+    return fig
+
+
+def plot_restoration_commitments_by_region(reg_comm_df: pd.DataFrame) -> go.Figure:
+    """
+    Renders grouped bar chart of Forest Restoration Commitments by Region (Yes vs No).
+    """
+    if reg_comm_df.empty:
+        fig = go.Figure()
+        _apply_common_layout(fig, "Restoration Commitments by Region", "", "")
+        fig.add_annotation(text="Restoration commitment data unavailable.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    regions = reg_comm_df.index.tolist()
+    yes_col = reg_comm_df['yes'] if 'yes' in reg_comm_df.columns else [0] * len(regions)
+    no_col = reg_comm_df['no'] if 'no' in reg_comm_df.columns else [0] * len(regions)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name='Commitment Reported (Yes)',
+        x=regions,
+        y=yes_col,
+        marker_color='#2d6a4f',
+        text=yes_col,
+        textposition='auto'
+    ))
+    fig.add_trace(go.Bar(
+        name='No Commitment (No)',
+        x=regions,
+        y=no_col,
+        marker_color='#d97706',
+        text=no_col,
+        textposition='auto'
+    ))
+
+    _apply_common_layout(
+        fig, 
+        "National Forest Restoration Commitments by Region (236 Countries)", 
+        "Geographic Region", 
+        "Number of Countries"
+    )
+    fig.update_layout(
+        barmode='group',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+
+def plot_cross_topic_scatter(cross_df: pd.DataFrame) -> go.Figure:
+    """
+    Exploratory cross-topic scatter plot:
+    Net Forest Change (1990-2025) on X-axis vs Cumulative Forest Fire Area (2000-2023) on Y-axis.
+    Color-coded by Restoration Commitment status.
+    """
+    if cross_df.empty or 'net_change_mha' not in cross_df.columns or 'cumul_fire_mha' not in cross_df.columns:
+        fig = go.Figure()
+        _apply_common_layout(fig, "Cross-Topic Synthesis", "Net Change (M ha)", "Cumulative Fire (M ha)")
+        fig.add_annotation(text="Cross-topic dataset unavailable.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+
+    valid = cross_df.dropna(subset=['net_change_mha', 'cumul_fire_mha']).copy()
+    valid['commitment_label'] = valid['has_restoration_commitment'].map(
+        lambda x: "Restoration Commitment: Yes" if str(x).lower() == 'yes' else "Restoration Commitment: No / Unreported"
+    )
+
+    color_discrete = {
+        "Restoration Commitment: Yes": "#2d6a4f",
+        "Restoration Commitment: No / Unreported": "#dc2626"
+    }
+
+    fig = px.scatter(
+        valid,
+        x='net_change_mha',
+        y='cumul_fire_mha',
+        color='commitment_label',
+        color_discrete_map=color_discrete,
+        hover_name='name',
+        hover_data={
+            'regions': True,
+            'net_change_mha': ':.2f',
+            'cumul_fire_mha': ':.2f',
+            'has_deg_definition': True,
+            'commitment_label': False
+        },
+        labels={
+            'net_change_mha': 'Net Forest-Area Change 1990-2025 (Million ha)',
+            'cumul_fire_mha': 'Cumulative Burned Forest Area 2000-2023 (Million ha)',
+            'commitment_label': 'Restoration Status'
+        }
+    )
+
+    # Add vertical reference line at net_change = 0
+    fig.add_vline(x=0, line_dash="dash", line_color="#94a3b8")
+
+    _apply_common_layout(
+        fig, 
+        "Exploratory Cross-Topic Synthesis: Forest Change vs Fire Disturbance", 
+        "Net Forest-Area Change 1990 → 2025 (Million ha)", 
+        "Reported Forest Burned Area 2000 → 2023 (Million ha)"
+    )
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+

@@ -725,3 +725,340 @@ def get_policy_adoption_report() -> pd.DataFrame:
             })
     return pd.DataFrame(records)
 
+
+# ==============================================================================
+# STAGE 3: DISTURBANCE, DEGRADATION & RESTORATION MODULES
+# ==============================================================================
+
+DISTURBANCE_INDICATORS_MAP = {
+    '5b_fire_forest': 'Burned Forest Area',
+    '5a_insect': 'Insect Disturbances',
+    '5a_weather': 'Extreme Weather Disturbances',
+    '5a_diseases': 'Forest Disease Disturbances',
+    '5a_other': 'Other Disturbances',
+    '5b_fire_land': 'Total Burned Land'
+}
+
+
+def get_disturbance_time_series(df_ann: pd.DataFrame, 
+                                selected_regions: list = None, 
+                                selected_countries: list = None) -> pd.DataFrame:
+    """
+    Computes annual disturbance time series (2000-2023) in Million hectares (M ha).
+    Aggregates only reported observations without treating missing values as zero.
+    """
+    if df_ann.empty:
+        return pd.DataFrame()
+        
+    sub = df_ann.copy()
+    if selected_regions and "All Regions" not in selected_regions:
+        sub = sub[sub['regions'].isin(selected_regions)]
+    if selected_countries and "All Countries" not in selected_countries:
+        sub = sub[sub['name'].isin(selected_countries)]
+        
+    dist_cols = ['5b_fire_forest', '5a_insect', '5a_weather', '5a_diseases', '5a_other', '5b_fire_land']
+    valid_cols = [c for c in dist_cols if c in sub.columns]
+    
+    # Group by year and sum reported values
+    grouped = sub.groupby('year')[valid_cols].sum(min_count=1).reset_index()
+    grouped = grouped.dropna(subset=['year']).sort_values(by='year')
+    
+    # Scale from 1,000 ha to Million ha
+    for c in valid_cols:
+        grouped[c + '_mha'] = grouped[c] / 1000.0
+        
+    # Also calculate total biotic/abiotic disturbance excluding double-counted land fire
+    core_disturbances = [c for c in ['5b_fire_forest', '5a_insect', '5a_weather', '5a_diseases', '5a_other'] if c in valid_cols]
+    grouped['total_forest_disturbance_mha'] = grouped[[c + '_mha' for c in core_disturbances]].sum(axis=1, min_count=1)
+    
+    return grouped
+
+
+def get_top_disturbance_countries(df_ann: pd.DataFrame, 
+                                  indicator: str = '5b_fire_forest', 
+                                  year: int = None, 
+                                  n: int = 10, 
+                                  selected_regions: list = None) -> pd.DataFrame:
+    """
+    Ranks top N countries for a selected disturbance indicator.
+    If year is None or 'All Years', computes cumulative disturbance over 2000-2023.
+    """
+    if df_ann.empty or indicator not in df_ann.columns:
+        return pd.DataFrame()
+        
+    sub = df_ann.copy()
+    if selected_regions and "All Regions" not in selected_regions:
+        sub = sub[sub['regions'].isin(selected_regions)]
+        
+    if year is not None and str(year) != "All Years 2000-2023":
+        sub = sub[sub['year'] == int(year)]
+        
+    # Aggregate by country
+    agg_df = sub.groupby(['name', 'regions'])[indicator].sum(min_count=1).reset_index()
+    agg_df = agg_df.dropna(subset=[indicator])
+    agg_df = agg_df[agg_df[indicator] > 0].copy()
+    agg_df['disturbance_mha'] = agg_df[indicator] / 1000.0
+    
+    return agg_df.sort_values(by='disturbance_mha', ascending=False).head(n)
+
+
+def get_disturbance_kpis(df_ann: pd.DataFrame, 
+                         selected_year: int = None, 
+                         selected_regions: list = None, 
+                         selected_countries: list = None) -> dict:
+    """
+    Computes summary KPI metrics for disturbance data.
+    """
+    kpis = {
+        'total_fire_mha': 0.0,
+        'total_insect_mha': 0.0,
+        'total_weather_mha': 0.0,
+        'total_disease_mha': 0.0,
+        'total_other_mha': 0.0,
+        'reporting_countries': 0,
+        'is_available': False
+    }
+    
+    if df_ann.empty:
+        return kpis
+        
+    sub = df_ann.copy()
+    if selected_regions and "All Regions" not in selected_regions:
+        sub = sub[sub['regions'].isin(selected_regions)]
+    if selected_countries and "All Countries" not in selected_countries:
+        sub = sub[sub['name'].isin(selected_countries)]
+        
+    if selected_year is not None and str(selected_year) != "All Years 2000-2023":
+        sub = sub[sub['year'] == int(selected_year)]
+        
+    dist_cols = ['5b_fire_forest', '5a_insect', '5a_weather', '5a_diseases', '5a_other']
+    has_data = False
+    
+    if '5b_fire_forest' in sub.columns and sub['5b_fire_forest'].notna().sum() > 0:
+        kpis['total_fire_mha'] = float(sub['5b_fire_forest'].sum()) / 1000.0
+        has_data = True
+    if '5a_insect' in sub.columns and sub['5a_insect'].notna().sum() > 0:
+        kpis['total_insect_mha'] = float(sub['5a_insect'].sum()) / 1000.0
+        has_data = True
+    if '5a_weather' in sub.columns and sub['5a_weather'].notna().sum() > 0:
+        kpis['total_weather_mha'] = float(sub['5a_weather'].sum()) / 1000.0
+        has_data = True
+    if '5a_diseases' in sub.columns and sub['5a_diseases'].notna().sum() > 0:
+        kpis['total_disease_mha'] = float(sub['5a_diseases'].sum()) / 1000.0
+        has_data = True
+    if '5a_other' in sub.columns and sub['5a_other'].notna().sum() > 0:
+        kpis['total_other_mha'] = float(sub['5a_other'].sum()) / 1000.0
+        has_data = True
+        
+    # Count of distinct countries reporting at least one non-null disturbance
+    active_mask = sub[dist_cols].notna().any(axis=1)
+    kpis['reporting_countries'] = int(sub[active_mask]['name'].nunique())
+    kpis['is_available'] = has_data
+    
+    return kpis
+
+
+def get_degradation_profile(df_deg: pd.DataFrame, 
+                            selected_regions: list = None, 
+                            selected_countries: list = None) -> dict:
+    """
+    Extracts structured breakdown of forest degradation monitoring and qualitative definitions.
+    Strictly preserves qualitative descriptions without converting text to invented numeric scores.
+    """
+    if df_deg.empty:
+        return {}
+        
+    sub = df_deg.copy()
+    if selected_regions and "All Regions" not in selected_regions:
+        sub = sub[sub['regions'].isin(selected_regions)]
+    if selected_countries and "All Countries" not in selected_countries:
+        sub = sub[sub['name'].isin(selected_countries)]
+        
+    # Definition counts
+    def_s = sub['Has your country nat. definition of degradation'].fillna('unreported').str.lower().str.strip()
+    def_counts = {
+        'Yes': int((def_s == 'yes').sum()),
+        'No': int((def_s == 'no').sum()),
+        'Unreported': int((def_s == 'unreported').sum())
+    }
+    
+    # Monitoring counts
+    mon_s = sub['Does your country monitor degradation'].fillna('unreported').str.lower().str.strip()
+    mon_counts = {
+        'Yes': int((mon_s == 'yes').sum()),
+        'No': int((mon_s == 'no').sum()),
+        'Unreported': int((mon_s == 'unreported').sum())
+    }
+    
+    # Scale counts
+    scale_s = sub['Monitoring scale'].fillna('unreported').str.strip()
+    scale_counts = scale_s.value_counts().to_dict()
+    
+    # Monitoring methods applied frequency
+    methods_list = []
+    for m in sub['Main methods applied'].dropna():
+        parts = [p.strip() for p in str(m).split(',') if p.strip()]
+        methods_list.extend(parts)
+        
+    method_df = pd.Series(methods_list).value_counts().reset_index()
+    method_df.columns = ['Method', 'Count']
+    
+    # Country table with usable information
+    usable_cols = [
+        'name', 'regions', 'Has your country nat. definition of degradation',
+        'Does your country monitor degradation', 'Monitoring scale',
+        'year of latest assessment', 'Degraded forest area', 'Criteria applied', 'What is the national definition'
+    ]
+    avail_cols = [c for c in usable_cols if c in sub.columns]
+    table = sub[avail_cols].copy().rename(columns={
+        'name': 'Country',
+        'regions': 'Region',
+        'Has your country nat. definition of degradation': 'National Definition',
+        'Does your country monitor degradation': 'Monitors Degradation',
+        'Monitoring scale': 'Monitoring Scale',
+        'year of latest assessment': 'Latest Assessment Year',
+        'Degraded forest area': 'Degraded Forest Area (Reported)',
+        'Criteria applied': 'Criteria Applied',
+        'What is the national definition': 'National Definition Text'
+    })
+    
+    deg_area_num = pd.to_numeric(sub['Degraded forest area'], errors='coerce')
+    numeric_count = int(deg_area_num.notna().sum())
+    
+    return {
+        'total_evaluated': len(sub),
+        'definition_counts': def_counts,
+        'monitoring_counts': mon_counts,
+        'scale_counts': scale_counts,
+        'methods_df': method_df,
+        'numeric_area_reported_count': numeric_count,
+        'country_table': table
+    }
+
+
+def get_restoration_profile(df_rest: pd.DataFrame, 
+                            selected_regions: list = None, 
+                            selected_countries: list = None) -> dict:
+    """
+    Extracts restoration commitments and regional distributions.
+    Clearly distinguishes reported political commitments from measured biophysical outcomes.
+    """
+    if df_rest.empty:
+        return {}
+        
+    sub = df_rest.copy()
+    if selected_regions and "All Regions" not in selected_regions:
+        sub = sub[sub['regions'].isin(selected_regions)]
+    if selected_countries and "All Countries" not in selected_countries:
+        sub = sub[sub['name'].isin(selected_countries)]
+        
+    comm_s = sub['restoration commitments'].fillna('unreported').str.lower().str.strip()
+    comm_counts = {
+        'Yes': int((comm_s == 'yes').sum()),
+        'No': int((comm_s == 'no').sum()),
+        'Unreported': int((comm_s == 'unreported').sum())
+    }
+    
+    # Commitments by region
+    reg_comm = sub.groupby(['regions', comm_s]).size().unstack(fill_value=0)
+    
+    # Target and law counts
+    mandates_count = int(sub['Law mandate'].dropna().str.strip().ne('').sum()) if 'Law mandate' in sub.columns else 0
+    targets_count = int(sub['restoration targets'].dropna().str.strip().ne('').sum()) if 'restoration targets' in sub.columns else 0
+    restored_reported_count = int(sub['ha restored to date'].dropna().str.strip().ne('').sum()) if 'ha restored to date' in sub.columns else 0
+    
+    usable_cols = [
+        'name', 'regions', 'restoration commitments', 'Law mandate', 
+        'National definition', 'areas in need of restoration', 
+        'restoration targets', 'ha restored to date'
+    ]
+    avail_cols = [c for c in usable_cols if c in sub.columns]
+    table = sub[avail_cols].copy().rename(columns={
+        'name': 'Country',
+        'regions': 'Region',
+        'restoration commitments': 'Restoration Commitment',
+        'Law mandate': 'Legal Mandate',
+        'National definition': 'National Definition',
+        'areas in need of restoration': 'Areas in Need of Restoration',
+        'restoration targets': 'Restoration Targets',
+        'ha restored to date': 'Hectares Restored to Date'
+    })
+    
+    return {
+        'total_evaluated': len(sub),
+        'commitments_counts': comm_counts,
+        'regional_commitments': reg_comm,
+        'mandates_count': mandates_count,
+        'targets_count': targets_count,
+        'restored_reported_count': restored_reported_count,
+        'country_table': table
+    }
+
+
+def get_cross_topic_synthesis(df_fra: pd.DataFrame, 
+                             df_ann: pd.DataFrame, 
+                             df_deg: pd.DataFrame, 
+                             df_rest: pd.DataFrame, 
+                             df_pol: pd.DataFrame, 
+                             start_year: int = 1990, 
+                             end_year: int = 2025,
+                             selected_regions: list = None) -> pd.DataFrame:
+    """
+    Integrates compatible country identifiers across:
+    - Forest Area Net Change (1990 - 2025)
+    - Cumulative Forest Fire Disturbance (2000 - 2023)
+    - Degradation Definition & Monitoring Status
+    - Restoration Commitment Status
+    - SFM Policy Adoption Status
+    
+    Strictly emphasizes exploratory nature: correlation does not imply causality.
+    """
+    if df_fra.empty or df_ann.empty or df_deg.empty or df_rest.empty:
+        return pd.DataFrame()
+        
+    # 1. Forest Area Change
+    piv = df_fra.pivot(index='name', columns='year', values='1a_forestArea')
+    if start_year not in piv.columns or end_year not in piv.columns:
+        return pd.DataFrame()
+        
+    chg_df = pd.DataFrame({
+        'name': piv.index.tolist(),
+        'start_forest_mha': (piv[start_year] / 1000.0).tolist(),
+        'end_forest_mha': (piv[end_year] / 1000.0).tolist(),
+        'net_change_mha': ((piv[end_year] - piv[start_year]) / 1000.0).tolist(),
+        'pct_change': (((piv[end_year] - piv[start_year]) / piv[start_year]) * 100.0).tolist()
+    })
+    
+    # 2. Cumulative Fire
+    c_fire = df_ann.groupby('name')['5b_fire_forest'].sum(min_count=1).reset_index()
+    c_fire['cumul_fire_mha'] = c_fire['5b_fire_forest'] / 1000.0
+    
+    # 3. Degradation
+    deg_cols = ['name', 'regions', 'iso3', 'Has your country nat. definition of degradation', 'Does your country monitor degradation']
+    deg_sub = df_deg[[c for c in deg_cols if c in df_deg.columns]].copy().rename(columns={
+        'Has your country nat. definition of degradation': 'has_deg_definition',
+        'Does your country monitor degradation': 'monitors_degradation'
+    })
+    
+    # 4. Restoration
+    rest_sub = df_rest[['name', 'restoration commitments']].copy().rename(columns={
+        'restoration commitments': 'has_restoration_commitment'
+    })
+    
+    # 5. Policy
+    pol_sub = df_pol[['name', 'National policies supporting SFM']].copy().rename(columns={
+        'National policies supporting SFM': 'has_sfm_policy'
+    })
+    
+    # Merge on country name
+    merged = pd.merge(deg_sub, chg_df, on='name', how='inner')
+    merged = pd.merge(merged, c_fire[['name', 'cumul_fire_mha']], on='name', how='left')
+    merged = pd.merge(merged, rest_sub, on='name', how='left')
+    merged = pd.merge(merged, pol_sub, on='name', how='left')
+    
+    if selected_regions and "All Regions" not in selected_regions:
+        merged = merged[merged['regions'].isin(selected_regions)]
+        
+    return merged
+
+

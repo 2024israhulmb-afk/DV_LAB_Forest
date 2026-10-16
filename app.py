@@ -39,7 +39,14 @@ from data_loader import (
     get_policy_adoption_report,
     get_dataset_inventory,
     load_raw_dataset,
-    FRA_VARIABLE_MAP
+    FRA_VARIABLE_MAP,
+    DISTURBANCE_INDICATORS_MAP,
+    get_disturbance_time_series,
+    get_top_disturbance_countries,
+    get_disturbance_kpis,
+    get_degradation_profile,
+    get_restoration_profile,
+    get_cross_topic_synthesis
 )
 from visualizations import (
     plot_forest_trend_line,
@@ -56,7 +63,14 @@ from visualizations import (
     plot_primary_forest_share,
     plot_flag_coverage_by_year,
     plot_tiers_summary,
-    render_empty_state_notice
+    render_empty_state_notice,
+    plot_disturbance_time_series,
+    plot_disturbance_country_ranking,
+    plot_disturbance_category_breakdown,
+    plot_degradation_governance_charts,
+    plot_degradation_methods_bar,
+    plot_restoration_commitments_by_region,
+    plot_cross_topic_scatter
 )
 
 # 3. Inject Custom CSS Stylesheet
