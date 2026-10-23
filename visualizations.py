@@ -27,20 +27,21 @@ LOSS_COLOR = "#b91c1c"
 # Base layout styling for Plotly figures
 PLOTLY_TEMPLATE = "simple_white"
 
-def _apply_common_layout(fig, title: str, x_title: str = "", y_title: str = ""):
-    """Applies clean, unified forest typography and margins to Plotly figures."""
+def _apply_common_layout(fig, title: str, x_title: str = "", y_title: str = "", height: int = 420):
+    """Applies clean, unified forest typography, height, and margins to Plotly figures."""
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
+        height=height,
         title={
             'text': f"<b>{title}</b>",
-            'y': 0.95,
+            'y': 0.96,
             'x': 0.02,
             'xanchor': 'left',
             'yanchor': 'top',
-            'font': {'size': 16, 'color': FOREST_DARK, 'family': 'Inter, sans-serif'}
+            'font': {'size': 15, 'color': FOREST_DARK, 'family': 'Inter, sans-serif'}
         },
         font={'family': 'Inter, sans-serif', 'color': '#1b2e24'},
-        margin=dict(l=40, r=40, t=65, b=45),
+        margin=dict(l=50, r=40, t=65, b=45),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         hoverlabel=dict(
@@ -1134,3 +1135,474 @@ def plot_cross_topic_scatter(cross_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+# ==============================================================================
+# STAGE 3: RESEARCH & STATISTICAL ANALYSIS VISUALIZATIONS
+# ==============================================================================
+
+def plot_country_forest_distribution_histogram(dist_metrics: dict, log_scale: bool = True) -> go.Figure:
+    """
+    Plots the statistical distribution of country-level forest area.
+    Highlights Mean and Median to illustrate high right-skewness.
+    """
+    fig = go.Figure()
+    if not dist_metrics or not dist_metrics.get('is_valid') or dist_metrics['df_plot'].empty:
+        _apply_common_layout(fig, "Country Forest Area Distribution", "Forest Area (Million ha)", "Number of Countries")
+        fig.add_annotation(
+            text="No distribution data available for current selection.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color="#6c757d")
+        )
+        return fig
+        
+    df_p = dist_metrics['df_plot'].copy()
+    mean_val = dist_metrics['mean_mha']
+    median_val = dist_metrics['median_mha']
+    yr = dist_metrics.get('year', 2025)
+    
+    if log_scale:
+        # Avoid log(0) by adding a tiny epsilon if needed
+        df_p['plot_val'] = df_p['forest_area_mha']
+        fig = px.histogram(
+            df_p,
+            x='plot_val',
+            nbins=35,
+            log_x=True,
+            color_discrete_sequence=[FOREST_MID],
+            hover_name='name',
+            hover_data={'regions': True, 'plot_val': ':.2f'}
+        )
+        x_title = "Forest Area in 2025 (Million ha, Logarithmic Scale)"
+    else:
+        fig = px.histogram(
+            df_p,
+            x='forest_area_mha',
+            nbins=35,
+            color_discrete_sequence=[FOREST_MID],
+            hover_name='name',
+            hover_data={'regions': True, 'forest_area_mha': ':.2f'}
+        )
+        x_title = "Forest Area in 2025 (Million ha, Linear Scale)"
+        
+    # Add vertical reference lines for Median and Mean
+    fig.add_vline(
+        x=median_val, 
+        line_width=2.5, 
+        line_dash="dash", 
+        line_color="#2d6a4f",
+        annotation_text=f"Median: {median_val:,.1f} M ha",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color="#2d6a4f", family="Inter, sans-serif")
+    )
+    
+    fig.add_vline(
+        x=mean_val, 
+        line_width=2.5, 
+        line_dash="dot", 
+        line_color="#b91c1c",
+        annotation_text=f"Mean: {mean_val:,.1f} M ha",
+        annotation_position="top right",
+        annotation_font=dict(size=11, color="#b91c1c", family="Inter, sans-serif")
+    )
+    
+    _apply_common_layout(
+        fig,
+        f"Country-Level Forest Area Frequency Distribution ({yr})",
+        x_title,
+        "Country Frequency Count",
+        height=420
+    )
+    fig.update_traces(marker_line_width=1, marker_line_color="#ffffff")
+    return fig
+
+
+def plot_forest_area_outliers_box(dist_metrics: dict) -> go.Figure:
+    """
+    Box plot depicting the interquartile range (IQR), median, fences, and outlier nations.
+    """
+    fig = go.Figure()
+    if not dist_metrics or not dist_metrics.get('is_valid') or dist_metrics['df_plot'].empty:
+        _apply_common_layout(fig, "Forest Area Outlier Analysis", "Forest Area (Million ha)", "")
+        fig.add_annotation(
+            text="No outlier data available.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color="#6c757d")
+        )
+        return fig
+        
+    df_p = dist_metrics['df_plot'].copy()
+    upper_fence = dist_metrics['upper_fence_mha']
+    yr = dist_metrics.get('year', 2025)
+    
+    fig = px.box(
+        df_p,
+        x='forest_area_mha',
+        points="outliers",
+        hover_name='name',
+        hover_data={'regions': True, 'forest_area_mha': ':.2f'},
+        color_discrete_sequence=[FOREST_DARK]
+    )
+    
+    # Annotate Tukey Upper Fence
+    fig.add_vline(
+        x=upper_fence, 
+        line_width=2, 
+        line_dash="dash", 
+        line_color="#f59e0b",
+        annotation_text=f"Outlier Fence (Q3 + 1.5×IQR): {upper_fence:,.1f} M ha",
+        annotation_position="top right",
+        annotation_font=dict(size=11, color="#92400e")
+    )
+    
+    _apply_common_layout(
+        fig,
+        f"Forest Area Outlier & Dispersion Analysis ({yr})",
+        "National Forest Area (Million ha)",
+        "",
+        height=360
+    )
+    fig.update_layout(yaxis=dict(showticklabels=False, showgrid=False))
+    return fig
+
+
+def plot_statistical_correlation_heatmap(corr_df: pd.DataFrame) -> go.Figure:
+    """
+    Annotated Pearson correlation matrix across validated continuous forest indicators.
+    """
+    fig = go.Figure()
+    if corr_df.empty:
+        _apply_common_layout(fig, "Indicator Correlation Heatmap", "", "")
+        fig.add_annotation(
+            text="Insufficient continuous numerical data to compute correlation matrix.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color="#6c757d")
+        )
+        return fig
+        
+    # Text formatting for annotations
+    text_vals = [[f"{val:.2f}" if pd.notna(val) else "-" for val in row] for row in corr_df.values]
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=corr_df.values,
+        x=corr_df.columns,
+        y=corr_df.index,
+        text=text_vals,
+        texttemplate="%{text}",
+        textfont={"size": 10, "family": "Inter, sans-serif"},
+        colorscale=[
+            [0.0, "#ffffff"],
+            [0.3, "#d8f3dc"],
+            [0.6, "#74c69d"],
+            [0.85, "#2d6a4f"],
+            [1.0, "#081c15"]
+        ],
+        zmin=0.0,
+        zmax=1.0,
+        colorbar=dict(
+            title=dict(text="Pearson r", font=dict(size=11, family="Inter, sans-serif")),
+            tickfont=dict(size=10)
+        )
+    ))
+    
+    _apply_common_layout(
+        fig,
+        "Pearson Correlation Matrix of Validated Numerical Forest Indicators",
+        "",
+        "",
+        height=540
+    )
+    fig.update_layout(
+        xaxis=dict(tickangle=-35, tickfont=dict(size=11)),
+        yaxis=dict(tickfont=dict(size=11)),
+        margin=dict(l=140, r=40, t=70, b=100)
+    )
+    return fig
+
+
+def plot_regional_comparison_bar(reg_df: pd.DataFrame, start_year: int = 1990, end_year: int = 2025) -> go.Figure:
+    """
+    Grouped bar chart comparing forest area at start and end year across the six FAO regions.
+    """
+    fig = go.Figure()
+    col_start = f'Forest Area {start_year} (M ha)'
+    col_end = f'Forest Area {end_year} (M ha)'
+    
+    if reg_df.empty or col_start not in reg_df.columns or col_end not in reg_df.columns:
+        _apply_common_layout(fig, f"Regional Forest Comparison ({start_year} vs {end_year})", "Region", "Forest Area (Million ha)")
+        fig.add_annotation(
+            text="No regional comparison data available.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color="#6c757d")
+        )
+        return fig
+        
+    df_sorted = reg_df.sort_values(by=col_end, ascending=False)
+    
+    fig.add_trace(go.Bar(
+        x=df_sorted['Region'],
+        y=df_sorted[col_start],
+        name=f"Milestone {start_year}",
+        marker_color="#95d5b2",
+        text=df_sorted[col_start].apply(lambda v: f"{v:,.0f} M"),
+        textposition="auto"
+    ))
+    
+    fig.add_trace(go.Bar(
+        x=df_sorted['Region'],
+        y=df_sorted[col_end],
+        name=f"Milestone {end_year}",
+        marker_color=FOREST_DARK,
+        text=df_sorted[col_end].apply(lambda v: f"{v:,.0f} M"),
+        textposition="auto"
+    ))
+    
+    _apply_common_layout(
+        fig,
+        f"Regional Forest Area Comparison ({start_year} vs {end_year})",
+        "FAO Continental Region",
+        "Total Forest Area (Million ha)",
+        height=440
+    )
+    fig.update_layout(
+        barmode='group',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+
+def plot_interval_rates_comparison(df_intervals: pd.DataFrame) -> go.Figure:
+    """
+    Grouped bar chart visualizing annual rates of Deforestation, Expansion, and Afforestation
+    across reporting intervals from Intervals_2026-10-16.csv.
+    Standardized unit: 1,000 ha/year.
+    """
+    fig = go.Figure()
+    if df_intervals.empty or 'year' not in df_intervals.columns:
+        _apply_common_layout(fig, "Interval Dynamics: Deforestation vs Expansion Rates", "Interval", "Rate (1,000 ha/yr)")
+        fig.add_annotation(
+            text="Intervals dataset unavailable.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color="#6c757d")
+        )
+        return fig
+        
+    grouped = df_intervals.groupby('year')[['1d_deforestation', '1d_expansion', '1d_afforestation']].sum().reset_index()
+    grouped = grouped.sort_values(by='year')
+    
+    fig.add_trace(go.Bar(
+        x=grouped['year'],
+        y=grouped['1d_deforestation'],
+        name="Reported Deforestation Rate",
+        marker_color="#b91c1c",
+        text=grouped['1d_deforestation'].apply(lambda v: f"{v:,.0f}"),
+        textposition="outside"
+    ))
+    
+    fig.add_trace(go.Bar(
+        x=grouped['year'],
+        y=grouped['1d_expansion'],
+        name="Total Forest Expansion Rate",
+        marker_color="#2d6a4f",
+        text=grouped['1d_expansion'].apply(lambda v: f"{v:,.0f}"),
+        textposition="outside"
+    ))
+    
+    fig.add_trace(go.Bar(
+        x=grouped['year'],
+        y=grouped['1d_afforestation'],
+        name="Afforestation Rate (Subset)",
+        marker_color="#74c69d",
+        text=grouped['1d_afforestation'].apply(lambda v: f"{v:,.0f}"),
+        textposition="outside"
+    ))
+    
+    _apply_common_layout(
+        fig,
+        "Annual Rates of Deforestation, Expansion & Afforestation Across Reporting Intervals",
+        "Reporting Interval Period",
+        "Annual Rate (1,000 ha/year)",
+        height=450
+    )
+    fig.update_layout(
+        barmode='group',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+
+def plot_country_profile_trend(profile_data: dict) -> go.Figure:
+    """
+    Plots the milestone forest area trajectory for a single country.
+    Uses actual reported observations only.
+    """
+    fig = go.Figure()
+    c_name = profile_data.get('name', 'Country')
+    m_df = profile_data.get('milestones_df', pd.DataFrame())
+    
+    if m_df.empty or 'Forest Area (M ha)' not in m_df.columns:
+        _apply_common_layout(fig, f"{c_name}: Forest Area Trajectory", "Year", "Forest Area (Million ha)")
+        fig.add_annotation(
+            text=f"No milestone data available for {c_name}.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color="#6c757d")
+        )
+        return fig
+        
+    valid_m = m_df.dropna(subset=['Forest Area (M ha)']).copy()
+    
+    fig.add_trace(go.Scatter(
+        x=valid_m['Year'],
+        y=valid_m['Forest Area (M ha)'],
+        mode='lines+markers+text',
+        name='Total Forest Area',
+        line=dict(color=FOREST_DARK, width=3.5),
+        marker=dict(size=9, color=FOREST_MID, line=dict(color='#ffffff', width=1.5)),
+        text=valid_m['Forest Area (M ha)'].apply(lambda v: f"{v:,.1f} M"),
+        textposition="top center"
+    ))
+    
+    _apply_common_layout(
+        fig,
+        f"{c_name} — Historical Forest Area Trajectory (1990–2025)",
+        "Official FRA Reporting Milestone Year",
+        "Forest Area (Million ha)",
+        height=400
+    )
+    fig.update_layout(
+        xaxis=dict(tickmode='array', tickvals=[1990, 2000, 2010, 2015, 2020, 2025])
+    )
+    return fig
+
+
+def plot_country_natural_vs_planted_donut(profile_data: dict) -> go.Figure:
+    """
+    Donut chart of Naturally Regenerating vs Planted Forest for a single country.
+    """
+    fig = go.Figure()
+    c_name = profile_data.get('name', 'Country')
+    sust = profile_data.get('latest_sustainability', {})
+    
+    nat_mha = sust.get('natural_forest_mha')
+    pl_mha = sust.get('planted_forest_mha')
+    
+    if nat_mha is None and pl_mha is None:
+        _apply_common_layout(fig, f"{c_name} Structural Forest Composition", "", "")
+        fig.add_annotation(
+            text="Natural vs. Planted breakdown not reported.",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+            font=dict(size=13, color="#6c757d")
+        )
+        return fig
+        
+    labels = []
+    values = []
+    colors = []
+    
+    if nat_mha is not None and nat_mha > 0:
+        labels.append("Naturally Regenerating")
+        values.append(nat_mha)
+        colors.append("#2d6a4f")
+    if pl_mha is not None and pl_mha > 0:
+        labels.append("Planted Forest")
+        values.append(pl_mha)
+        colors.append("#74c69d")
+        
+    if not values:
+        _apply_common_layout(fig, f"{c_name} Structural Forest Composition", "", "")
+        fig.add_annotation(text="No positive forest area reported.", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+        
+    tot = sum(values)
+    fig.add_trace(go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.55,
+        marker=dict(colors=colors, line=dict(color='#ffffff', width=2)),
+        textinfo='label+percent',
+        hoverinfo='label+value+percent'
+    ))
+    
+    _apply_common_layout(
+        fig,
+        f"{c_name} — Forest Structural Composition",
+        "",
+        "",
+        height=340
+    )
+    fig.update_layout(
+        annotations=[dict(text=f"<b>{tot:,.1f}</b><br>M ha", x=0.5, y=0.5, font_size=13, font_family="Inter", showarrow=False)],
+        showlegend=False
+    )
+    return fig
+
+
+def plot_research_q1_global_trajectory(df_fra: pd.DataFrame) -> go.Figure:
+    """
+    Specialized chart for Research Question 1: Global Forest Area Trajectory (1990–2025).
+    """
+    fig = go.Figure()
+    if df_fra.empty or '1a_forestArea' not in df_fra.columns:
+        _apply_common_layout(fig, "Global Forest Area Trajectory (1990–2025)", "Year", "Forest Area (Million ha)")
+        return fig
+        
+    annual = df_fra.groupby('year')['1a_forestArea'].sum().reset_index()
+    annual['forest_mha'] = annual['1a_forestArea'] / 1000.0
+    annual = annual.dropna(subset=['year', 'forest_mha']).sort_values(by='year')
+    
+    fig.add_trace(go.Scatter(
+        x=annual['year'],
+        y=annual['forest_mha'],
+        mode='lines+markers+text',
+        name='Global Forest Area',
+        fill='tozeroy',
+        fillcolor='rgba(45, 106, 79, 0.08)',
+        line=dict(color=FOREST_DARK, width=3.5),
+        marker=dict(size=9, color=FOREST_MID, line=dict(color='#ffffff', width=2)),
+        text=annual['forest_mha'].apply(lambda v: f"{v:,.1f} M"),
+        textposition="top center"
+    ))
+    
+    _apply_common_layout(
+        fig,
+        "Q1: Global Forest Extent Trajectory (1990–2025)",
+        "Reporting Milestone Year",
+        "Global Forest Area (Million ha)",
+        height=420
+    )
+    fig.update_layout(
+        yaxis=dict(range=[3800, 4500]),
+        xaxis=dict(tickmode='array', tickvals=[1990, 2000, 2010, 2015, 2020, 2025])
+    )
+    return fig
+
+
+def plot_research_q4_regional_shares(reg_df: pd.DataFrame, end_year: int = 2025) -> go.Figure:
+    """
+    Specialized chart for Research Question 4: Regional Distribution and 1990–2025 Change Direction.
+    """
+    fig = go.Figure()
+    col_end = f'Forest Area {end_year} (M ha)'
+    if reg_df.empty or col_end not in reg_df.columns:
+        _apply_common_layout(fig, "Regional Forest Distribution", "Forest Area (M ha)", "Region")
+        return fig
+        
+    df_s = reg_df.sort_values(by=col_end, ascending=True).copy()
+    # Color bars by positive vs negative net change
+    colors = [GAIN_COLOR if val >= 0 else LOSS_COLOR for val in df_s['Net Change (M ha)']]
+    
+    fig.add_trace(go.Bar(
+        y=df_s['Region'],
+        x=df_s[col_end],
+        orientation='h',
+        marker_color=colors,
+        text=df_s.apply(lambda r: f"{r[col_end]:,.1f} M ha ({r['Relative Change (%)']:+.1f}%)", axis=1),
+        textposition='inside'
+    ))
+    
+    _apply_common_layout(
+        fig,
+        f"Q4: Regional Forest Extent ({end_year}) & Net Trajectory Direction",
+        "Total Forest Area (Million ha)",
+        "FAO Continental Region",
+        height=380
+    )
+    return fig

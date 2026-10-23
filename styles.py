@@ -240,10 +240,78 @@ def get_custom_css():
         border-top: 1px solid #e2ece9;
         margin-top: 3rem;
     }
+
+    /* Stage 3 Research Questions and Statistical Cards */
+    .rq-card {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 1.5rem;
+        border: 1px solid #d8f3dc;
+        box-shadow: 0 4px 14px rgba(27, 67, 50, 0.05);
+        margin-bottom: 1.8rem;
+    }
+
+    .rq-badge {
+        display: inline-block;
+        background: #2d6a4f;
+        color: #ffffff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 0.25rem 0.7rem;
+        border-radius: 20px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+
+    .rq-title {
+        font-family: 'Outfit', 'Inter', sans-serif;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1b4332;
+        margin: 0.2rem 0 0.6rem 0;
+        line-height: 1.3;
+    }
+
+    .formula-callout {
+        background: #f4f8f5;
+        border-left: 4px solid #40916c;
+        padding: 0.75rem 1rem;
+        border-radius: 0 8px 8px 0;
+        font-size: 0.85rem;
+        color: #1b4332;
+        margin: 0.75rem 0;
+        font-family: 'Inter', monospace;
+    }
+
+    .finding-callout {
+        background: #ebf5ee;
+        border: 1px solid #b7e4c7;
+        border-left: 4px solid #2d6a4f;
+        padding: 0.9rem 1.1rem;
+        border-radius: 0 8px 8px 0;
+        font-size: 0.9rem;
+        color: #1b2e24;
+        margin-top: 0.8rem;
+        line-height: 1.55;
+    }
+
+    .stat-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: #ebf2ed;
+        padding: 0.25rem 0.65rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        color: #2d6a4f;
+        font-weight: 600;
+        margin-right: 0.4rem;
+    }
     </style>
     """
 
-def render_header(title, subtitle, source, updated_date=None, country_count=236):
+def render_header(title, subtitle, source, updated_date=None, country_count=236, stage_text="Stage 3: Research Insights & Statistical Validation"):
     """Generates the HTML banner for the top of the dashboard."""
     date_badge = f'<span class="meta-badge">📅 Dataset Release: {updated_date}</span>' if updated_date else ''
     
@@ -255,7 +323,7 @@ def render_header(title, subtitle, source, updated_date=None, country_count=236)
             <span class="meta-badge">📊 Data Source: {source}</span>
             <span class="meta-badge">🌍 Coverage: {country_count} Countries & Territories</span>
             {date_badge}
-            <span class="meta-badge">🔬 Stage 1: Baseline Architecture</span>
+            <span class="meta-badge">🔬 {stage_text}</span>
         </div>
     </div>
     """
@@ -285,3 +353,4 @@ def render_kpi_card(title, value, subtext="", trend=None, trend_positive=True):
         </div>
     </div>
     """
+

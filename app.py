@@ -27,6 +27,7 @@ from data_loader import (
     load_forest_restoration,
     load_tiers,
     load_ndp,
+    load_nwfp,
     filter_fra_data,
     calculate_kpis,
     calculate_period_change,
@@ -46,7 +47,13 @@ from data_loader import (
     get_disturbance_kpis,
     get_degradation_profile,
     get_restoration_profile,
-    get_cross_topic_synthesis
+    get_cross_topic_synthesis,
+    get_statistical_distribution_metrics,
+    calculate_correlation_matrix,
+    get_regional_comparison_metrics,
+    get_interval_dynamics_summary,
+    get_country_forest_profile,
+    get_research_question_findings
 )
 from visualizations import (
     plot_forest_trend_line,
@@ -70,7 +77,16 @@ from visualizations import (
     plot_degradation_governance_charts,
     plot_degradation_methods_bar,
     plot_restoration_commitments_by_region,
-    plot_cross_topic_scatter
+    plot_cross_topic_scatter,
+    plot_country_forest_distribution_histogram,
+    plot_forest_area_outliers_box,
+    plot_statistical_correlation_heatmap,
+    plot_regional_comparison_bar,
+    plot_interval_rates_comparison,
+    plot_country_profile_trend,
+    plot_country_natural_vs_planted_donut,
+    plot_research_q1_global_trajectory,
+    plot_research_q4_regional_shares
 )
 
 # 3. Inject Custom CSS Stylesheet
@@ -82,6 +98,36 @@ try:
 except Exception as e:
     st.error(f"Error loading core FRA dataset: {e}")
     df_fra = pd.DataFrame()
+
+try:
+    df_intervals = load_intervals()
+except Exception:
+    df_intervals = pd.DataFrame()
+
+try:
+    df_deg = load_degraded_forest()
+except Exception:
+    df_deg = pd.DataFrame()
+
+try:
+    df_rest = load_forest_restoration()
+except Exception:
+    df_rest = pd.DataFrame()
+
+try:
+    df_pol = load_forest_policy()
+except Exception:
+    df_pol = pd.DataFrame()
+
+try:
+    df_tiers = load_tiers()
+except Exception:
+    df_tiers = pd.DataFrame()
+
+try:
+    df_nwfp = load_nwfp()
+except Exception:
+    df_nwfp = pd.DataFrame()
 
 # 5. Sidebar Configuration: Navigation & Dynamic Filters
 with st.sidebar:
@@ -95,7 +141,8 @@ with st.sidebar:
             "📈 Multi-Country Trend Analysis",
             "🌱 Forest Sustainability Indicators",
             "🗺️ Global Geographic Map",
-            "📋 Data Quality & Diagnostics"
+            "📋 Data Quality & Diagnostics",
+            "🔬 Research Questions & Key Findings"
         ],
         index=0
     )
@@ -895,10 +942,731 @@ elif nav_option == "📋 Data Quality & Diagnostics":
     else:
         st.warning(f"Could not load preview for {chosen_file}.")
 
+
+# ==============================================================================
+# VIEW 8: RESEARCH QUESTIONS & KEY FINDINGS (STAGE 3)
+# ==============================================================================
+elif nav_option == "🔬 Research Questions & Key Findings":
+    st.markdown("""
+    <div class="section-card">
+        <div class="section-header">
+            <h2 class="section-title">🔬 Research Questions, Statistical Analysis & Country Validation</h2>
+            <p class="section-desc">Empirical investigation of core FAO FRA research questions, statistical dispersion, outlier diagnostics, and granular multi-dataset country profiling.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab_rq, tab_stats, tab_profile, tab_export = st.tabs([
+        "❓ 8 Core Research Questions",
+        "📐 Statistical Analysis & Outliers",
+        "🌲 Country Forest Profile",
+        "📑 Summary Report & Downloads"
+    ])
+
+    # --------------------------------------------------------------------------
+    # TAB 1: 8 CORE RESEARCH QUESTIONS
+    # --------------------------------------------------------------------------
+    with tab_rq:
+        st.markdown("""
+        <div class="info-callout">
+            <strong>Methodological Note on FAO FRA Data:</strong>
+            Findings are generated dynamically from official FAO Forest Resources Assessment datasets.
+            Calculations strictly adhere to official definitions: <strong>Net Forest-Area Change</strong> represents the algebraic sum 
+            of forest losses, afforestation, and natural expansion, and is <em>not</em> equivalent to gross deforestation or satellite tree-cover canopy loss.
+        </div>
+        """, unsafe_allow_html=True)
+
+        findings = get_research_question_findings(
+            df_fra=df_fra,
+            df_intervals=df_intervals,
+            df_deg=df_deg,
+            df_rest=df_rest,
+            df_pol=df_pol,
+            df_tiers=df_tiers,
+            start_year=baseline_year,
+            end_year=selected_year,
+            selected_regions=regions_filter
+        )
+
+        # --- Q1 ---
+        q1 = findings['Q1']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 1</span>
+            <span class="stat-pill">📅 {q1['reporting_period']}</span>
+            <h3 class="rq-title">{q1['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q1['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q1_m1, col_q1_m2, col_q1_m3, col_q1_m4 = st.columns(4)
+        if q1['summary']['is_valid']:
+            col_q1_m1.metric("1990 Forest Extent", f"{q1['summary']['total_start_mha']:,.1f} M ha")
+            col_q1_m2.metric("2025 Forest Extent", f"{q1['summary']['total_end_mha']:,.1f} M ha")
+            col_q1_m3.metric("Net Change (1990→2025)", f"{q1['summary']['net_change_mha']:,.1f} M ha", f"{q1['summary']['pct_change']:.2f}%")
+            col_q1_m4.metric("Annualized Rate", f"{q1['summary']['annual_rate_mha']:,.2f} M ha/yr")
+
+        fig_q1 = plot_research_q1_global_trajectory(df_fra)
+        st.plotly_chart(fig_q1, use_container_width=True)
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q1["interpretation"]}</div>', unsafe_allow_html=True)
+        
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q2 ---
+        q2 = findings['Q2']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 2</span>
+            <span class="stat-pill">📅 {q2['reporting_period']}</span>
+            <h3 class="rq-title">{q2['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q2['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q2_c, col_q2_t = st.columns([0.55, 0.45])
+        with col_q2_c:
+            fig_q2 = plot_top_countries_ranking(df_fra, year=2025, n=10, selected_regions=regions_filter)
+            st.plotly_chart(fig_q2, use_container_width=True)
+        with col_q2_t:
+            if 'data_table' in q2 and not q2['data_table'].empty:
+                st.dataframe(
+                    q2['data_table'].style.format({
+                        'Forest Area 2025 (M ha)': "{:,.2f}",
+                        'Global Share (%)': "{:.2f}%"
+                    }),
+                    use_container_width=True
+                )
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q2["interpretation"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q3 ---
+        q3 = findings['Q3']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 3</span>
+            <span class="stat-pill">📅 {q3['reporting_period']}</span>
+            <h3 class="rq-title">{q3['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q3['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q3_g, col_q3_l = st.columns(2)
+        with col_q3_g:
+            st.markdown(f"#### 📈 Top Forest Expanding Nations ({baseline_year}→{selected_year})")
+            if 'gainers_table' in q3 and not q3['gainers_table'].empty:
+                st.dataframe(
+                    q3['gainers_table'].style.format({
+                        'Increase (M ha)': "{:+,.2f}",
+                        'Relative Growth (%)': "{:+.2f}%"
+                    }),
+                    use_container_width=True
+                )
+        with col_q3_l:
+            st.markdown(f"#### 📉 Top Forest Decreasing Nations ({baseline_year}→{selected_year})")
+            if 'losers_table' in q3 and not q3['losers_table'].empty:
+                st.dataframe(
+                    q3['losers_table'].style.format({
+                        'Decrease (M ha)': "{:,.2f}",
+                        'Relative Loss (%)': "{:.2f}%"
+                    }),
+                    use_container_width=True
+                )
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q3["interpretation"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q4 ---
+        q4 = findings['Q4']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 4</span>
+            <span class="stat-pill">📅 {q4['reporting_period']}</span>
+            <h3 class="rq-title">{q4['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q4['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q4_1, col_q4_2 = st.columns(2)
+        with col_q4_1:
+            fig_q4_share = plot_research_q4_regional_shares(q4['regional_table'], end_year=2025)
+            st.plotly_chart(fig_q4_share, use_container_width=True)
+        with col_q4_2:
+            fig_q4_bar = plot_regional_comparison_bar(q4['regional_table'], start_year=1990, end_year=2025)
+            st.plotly_chart(fig_q4_bar, use_container_width=True)
+
+        if not q4['regional_table'].empty:
+            st.dataframe(
+                q4['regional_table'].style.format({
+                    'Forest Area 1990 (M ha)': "{:,.1f}",
+                    'Forest Area 2025 (M ha)': "{:,.1f}",
+                    'Net Change (M ha)': "{:+,.1f}",
+                    'Relative Change (%)': "{:+.2f}%",
+                    'Annual Rate (M ha/yr)': "{:+,.3f}",
+                    'Total Land Area (M ha)': "{:,.1f}",
+                    'Forest Cover (% Land)': "{:.1f}%",
+                    'Share of Global Forest 2025 (%)': "{:.1f}%"
+                }),
+                use_container_width=True
+            )
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q4["interpretation"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q5 ---
+        q5 = findings['Q5']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 5</span>
+            <span class="stat-pill">📅 {q5['reporting_period']}</span>
+            <h3 class="rq-title">{q5['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q5['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        fig_q5 = plot_interval_rates_comparison(df_intervals)
+        st.plotly_chart(fig_q5, use_container_width=True)
+        if not q5['intervals_table'].empty:
+            st.dataframe(q5['intervals_table'], use_container_width=True)
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q5["interpretation"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q6 ---
+        q6 = findings['Q6']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 6</span>
+            <span class="stat-pill">📅 {q6['reporting_period']}</span>
+            <h3 class="rq-title">{q6['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q6['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q6_k1, col_q6_k2, col_q6_k3, col_q6_k4 = st.columns(4)
+        col_q6_k1.metric("Naturally Regenerating Total", f"{q6['natural_total_mha']:,.1f} M ha")
+        col_q6_k2.metric("Planted Forest Total", f"{q6['planted_total_mha']:,.1f} M ha")
+        col_q6_k3.metric("Natural Forest Share", f"{q6['natural_share_pct']:.1f}%")
+        col_q6_k4.metric("Planted Forest Share", f"{q6['planted_share_pct']:.1f}%")
+
+        sust_df_q6 = get_sustainability_metrics(df_fra, year=2025, selected_regions=regions_filter)
+        fig_q6 = plot_natural_vs_planted_bar(sust_df_q6, top_n=12)
+        st.plotly_chart(fig_q6, use_container_width=True)
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q6["interpretation"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q7 ---
+        q7 = findings['Q7']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 7</span>
+            <span class="stat-pill">📅 {q7['reporting_period']}</span>
+            <h3 class="rq-title">{q7['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q7['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q7_1, col_q7_2 = st.columns(2)
+        with col_q7_1:
+            flag_audit_q7 = get_flag_audit_report(df_fra)
+            if not flag_audit_q7.empty:
+                fig_q7_flags = plot_flag_coverage_by_year(flag_audit_q7, variable="Total Forest Area")
+                st.plotly_chart(fig_q7_flags, use_container_width=True)
+        with col_q7_2:
+            if not q7['tiers_summary'].empty:
+                fig_q7_tiers = plot_tiers_summary(q7['tiers_summary'])
+                st.plotly_chart(fig_q7_tiers, use_container_width=True)
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q7["interpretation"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 2rem 0;'>", unsafe_allow_html=True)
+
+        # --- Q8 ---
+        q8 = findings['Q8']
+        st.markdown(f"""
+        <div class="rq-card">
+            <span class="rq-badge">Research Question 8</span>
+            <span class="stat-pill">📅 {q8['reporting_period']}</span>
+            <h3 class="rq-title">{q8['question']}</h3>
+            <div class="formula-callout"><strong>Formula Applied:</strong> {q8['calculation_used']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_q8_1, col_q8_2 = st.columns([0.45, 0.55])
+        with col_q8_1:
+            if not q8['policy_summary'].empty:
+                st.markdown("#### 📜 Sustainable Forest Management Policy Adoption")
+                st.dataframe(q8['policy_summary'], use_container_width=True)
+        with col_q8_2:
+            st.markdown("#### 🤝 National Restoration Commitments by Region")
+            fig_q8_rest = plot_restoration_commitments_by_region(df_rest)
+            st.plotly_chart(fig_q8_rest, use_container_width=True)
+        st.markdown(f'<div class="finding-callout"><strong>Data-Driven Finding:</strong> {q8["interpretation"]}</div>', unsafe_allow_html=True)
+
+
+    # --------------------------------------------------------------------------
+    # TAB 2: STATISTICAL ANALYSIS & OUTLIERS
+    # --------------------------------------------------------------------------
+    with tab_stats:
+        st.markdown("### 📐 Statistical Analysis, Skewness, Outlier & Correlation Diagnostics")
+        st.write(
+            "Rigorous exploratory data analysis (EDA) evaluating the dispersion, asymmetry, parametric vs non-parametric statistics, "
+            "and linear relationships of forest indicators across the 236 evaluated countries and territories."
+        )
+
+        # 1. Period-to-Period Statistical Change Calculator
+        st.markdown("#### 1. Period Percentage & Annualized Change Calculator")
+        col_s_y1, col_s_y2 = st.columns(2)
+        with col_s_y1:
+            stat_start_yr = st.selectbox("Start Milestone:", all_actual_years[:-1], index=0, key='stat_start_yr')
+        with col_s_y2:
+            stat_valid_end = [y for y in all_actual_years if y > stat_start_yr]
+            stat_end_yr = st.selectbox("End Milestone:", stat_valid_end if stat_valid_end else [all_actual_years[-1]], index=len(stat_valid_end)-1 if stat_valid_end else 0, key='stat_end_yr')
+
+        _, stat_chg = calculate_period_change(df_fra, stat_start_yr, stat_end_yr, regions_filter)
+        if stat_chg['is_valid']:
+            col_sc1, col_sc2, col_sc3, col_sc4 = st.columns(4)
+            col_sc1.metric(f"Net Change ({stat_start_yr}→{stat_end_yr})", f"{stat_chg['net_change_mha']:+,.1f} M ha")
+            col_sc2.metric("Relative Percentage Change", f"{stat_chg['pct_change']:+.2f}%")
+            col_sc3.metric("Annualized Change Rate", f"{stat_chg['annual_rate_mha']:+,.3f} M ha/yr")
+            col_sc4.metric("Expanding vs Declining", f"{stat_chg['gainers_count']} Gain / {stat_chg['losers_count']} Loss")
+        else:
+            st.warning(stat_chg.get('error_msg', 'Unable to compute period change.'))
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 1.5rem 0;'>", unsafe_allow_html=True)
+
+        # 2. Distribution & Skewness
+        st.markdown("#### 2. Country Forest Area Frequency Distribution & Skewness")
+        stat_dist_year = st.select_slider("Target Year for Distribution:", options=all_actual_years, value=selected_year, key='stat_dist_yr')
+        dist_metrics = get_statistical_distribution_metrics(df_fra, year=stat_dist_year, selected_regions=regions_filter)
+
+        col_opt_hist, _ = st.columns([0.4, 0.6])
+        with col_opt_hist:
+            scale_choice = st.radio("X-Axis Scaling:", ["Logarithmic Scale (Recommended for Skewed Data)", "Linear Scale"], horizontal=True, key='hist_scale')
+        use_log = "Logarithmic" in scale_choice
+
+        fig_hist = plot_country_forest_distribution_histogram(dist_metrics, log_scale=use_log)
+        st.plotly_chart(fig_hist, use_container_width=True)
+
+        if dist_metrics['is_valid']:
+            col_d1, col_d2, col_d3, col_d4, col_d5 = st.columns(5)
+            col_d1.metric("Evaluated Nations", f"{dist_metrics['count']}")
+            col_d2.metric("Mean Area", f"{dist_metrics['mean_mha']:,.2f} M ha")
+            col_d3.metric("Median Area", f"{dist_metrics['median_mha']:,.2f} M ha")
+            col_d4.metric("Std Deviation", f"{dist_metrics['std_mha']:,.2f} M ha")
+            col_d5.metric("Fisher-Pearson Skewness", f"{dist_metrics['skewness']:+.2f}")
+
+            st.markdown(f"""
+            <div class="info-callout">
+                <strong>💡 Distribution Insights:</strong>
+                The distribution displays extreme <strong>positive (right) skewness ({dist_metrics['skewness']:+.2f})</strong>. 
+                The parametric Mean (<strong>{dist_metrics['mean_mha']:,.2f} M ha</strong>) is over <strong>{dist_metrics['mean_mha'] / max(0.01, dist_metrics['median_mha']):.1f} times higher</strong> 
+                than the non-parametric Median (<strong>{dist_metrics['median_mha']:,.2f} M ha</strong>), proving that a small handful of mega-forest nations pull the arithmetic average up dramatically. 
+                For skewed ecological data, the <em>Median</em> and <em>Interquartile Range (IQR)</em> are the scientifically appropriate central tendency metrics.
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 1.5rem 0;'>", unsafe_allow_html=True)
+
+        # 3. Outlier Analysis (Tukey Boxplot)
+        st.markdown("#### 3. Dispersion, Interquartile Range (IQR) & Outlier Analysis")
+        fig_box = plot_forest_area_outliers_box(dist_metrics)
+        st.plotly_chart(fig_box, use_container_width=True)
+
+        if dist_metrics['is_valid']:
+            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
+            col_b1.metric("25th Percentile (Q1)", f"{dist_metrics['q25_mha']:,.2f} M ha")
+            col_b2.metric("75th Percentile (Q3)", f"{dist_metrics['q75_mha']:,.2f} M ha")
+            col_b3.metric("Interquartile Range (IQR)", f"{dist_metrics['iqr_mha']:,.2f} M ha")
+            col_b4.metric("Upper Outlier Fence (Q3+1.5×IQR)", f"{dist_metrics['upper_fence_mha']:,.2f} M ha")
+
+            with st.expander(f"🔍 View Identified Outlier Countries ({dist_metrics['outliers_count']} Nations with Forest Area > {dist_metrics['upper_fence_mha']:,.1f} M ha)"):
+                st.dataframe(
+                    dist_metrics['outliers_df'].rename(columns={'name': 'Country', 'regions': 'Region', 'forest_area_mha': f'Forest Area {stat_dist_year} (M ha)'}).style.format({
+                        f'Forest Area {stat_dist_year} (M ha)': "{:,.2f}"
+                    }),
+                    use_container_width=True
+                )
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 1.5rem 0;'>", unsafe_allow_html=True)
+
+        # 4. Correlation Heatmap
+        st.markdown("#### 4. Pearson Correlation Matrix of Validated Continuous Forest Indicators")
+        st.write(
+            "Excludes text identifiers (iso3, name), categorical codes, and data-flag columns (*_flag). "
+            "Excludes constant zero-variance indicators and handles missing values safely through pairwise observation deletion without fabricating zeros."
+        )
+
+        all_valid_cand = [
+            '1a_forestArea', '1a_landArea', '1a_otherWoodedLand', 
+            '1b_naturallyRegeneratingForest', '1b_plantedForest', '1b_primary',
+            '2a_gs_tot_forest', '2c_agb_total', '2c_bgb_total', '2d_carbon_agb_total',
+            '3a_tot_biodiv', '3b_protected'
+        ]
+        
+        selected_corr_keys = st.multiselect(
+            "Select Numerical Indicators to Correlate:",
+            options=all_valid_cand,
+            default=['1a_forestArea', '1a_landArea', '1a_otherWoodedLand', '1b_naturallyRegeneratingForest', '1b_plantedForest', '1b_primary', '2a_gs_tot_forest', '2c_agb_total']
+        )
+        
+        corr_matrix, _ = calculate_correlation_matrix(df_fra, year=selected_year, selected_keys=selected_corr_keys)
+        fig_corr = plot_statistical_correlation_heatmap(corr_matrix)
+        st.plotly_chart(fig_corr, use_container_width=True)
+
+        st.markdown("""
+        <div class="warning-callout">
+            <strong>⚠️ Scientific Caution on Correlation:</strong>
+            Strong statistical correlation (e.g. between <em>Forest Area</em> and <em>Naturally Regenerating Forest</em>, $r \approx 0.99$, 
+            or between <em>Growing Stock</em> and <em>Above-Ground Biomass</em>, $r > 0.95$) reflects biophysical scaling relationships. 
+            Correlation does <strong>not</strong> imply causality, nor does it establish environmental relationships with climate, rainfall, 
+            or economic variables unless those specific covariates are explicitly present in the data.
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 1.5rem 0;'>", unsafe_allow_html=True)
+
+        # 5. Interval Rates Dynamics
+        st.markdown("#### 5. Reporting Interval Dynamics: Annual Rates of Deforestation vs Expansion")
+        fig_int = plot_interval_rates_comparison(df_intervals)
+        st.plotly_chart(fig_int, use_container_width=True)
+        int_summary_stats = get_interval_dynamics_summary(df_intervals)
+        if not int_summary_stats['summary_table'].empty:
+            st.dataframe(int_summary_stats['summary_table'], use_container_width=True)
+
+
+    # --------------------------------------------------------------------------
+    # TAB 3: COUNTRY FOREST PROFILE
+    # --------------------------------------------------------------------------
+    with tab_profile:
+        st.markdown("### 🌲 Comprehensive Country Forest Profile Explorer")
+        st.write(
+            "Select any country or territory to inspect its complete multi-dataset record across FAO FRA reporting milestones, "
+            "forest structural composition, intervals rates, qualitative degradation definitions, restoration commitments, "
+            "Non-Wood Forest Products (NWFP), forest policy legislation, observation status flags, and data quality tiers."
+        )
+
+        all_countries_profile = sorted(df_fra['name'].dropna().unique().tolist())
+        default_idx = 0
+        preferred_defaults = ["Brazil", "Canada", "China", "India", "United States of America", "Democratic Republic of the Congo", "Russian Federation", "Indonesia"]
+        if selected_country != "All Countries" and selected_country in all_countries_profile:
+            default_idx = all_countries_profile.index(selected_country)
+        else:
+            for pref in preferred_defaults:
+                if pref in all_countries_profile:
+                    default_idx = all_countries_profile.index(pref)
+                    break
+
+        prof_country = st.selectbox(
+            "Select Country / Territory to Profile:",
+            options=all_countries_profile,
+            index=default_idx,
+            key='prof_country_picker'
+        )
+
+        profile = get_country_forest_profile(
+            country_name=prof_country,
+            df_fra=df_fra,
+            df_intervals=df_intervals,
+            df_deg=df_deg,
+            df_rest=df_rest,
+            df_pol=df_pol,
+            df_nwfp=df_nwfp,
+            df_tiers=df_tiers,
+            start_year=baseline_year,
+            end_year=selected_year
+        )
+
+        if profile['found']:
+            # Country Hero Header
+            st.markdown(f"""
+            <div class="hero-container" style="padding: 1.5rem 1.8rem; margin-bottom: 1.5rem;">
+                <h2 class="hero-title" style="font-size: 1.8rem;">{profile['name']}</h2>
+                <div class="hero-subtitle" style="margin-bottom: 0.6rem;">Regional Allocation: <strong>{profile['region']}</strong> (Subregion: {profile['subregion']})</div>
+                <div class="hero-meta-bar" style="padding-top: 0.5rem;">
+                    <span class="meta-badge">🏷️ ISO3: {profile['iso3']}</span>
+                    <span class="meta-badge">📅 Milestones: 1990–2025</span>
+                    <span class="meta-badge">🌲 Forest Status Tier: {profile['tiers'].get('forest_area_status', 'Not reported')}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Profile KPIs
+            col_pk1, col_pk2, col_pk3, col_pk4 = st.columns(4)
+            latest_s = profile.get('latest_sustainability', {})
+            tot_f_disp = f"{latest_s.get('total_forest_mha'):,.2f} M ha" if latest_s.get('total_forest_mha') is not None else "Not reported"
+            cov_disp = f"{latest_s.get('forest_cover_pct'):.1f}%" if latest_s.get('forest_cover_pct') is not None else "Not reported"
+            nat_disp = f"{latest_s.get('natural_share_pct'):.1f}%" if latest_s.get('natural_share_pct') is not None else "Not reported"
+            plant_disp = f"{latest_s.get('planted_share_pct'):.1f}%" if latest_s.get('planted_share_pct') is not None else "Not reported"
+
+            col_pk1.metric(f"Total Forest ({latest_s.get('year', 2025)})", tot_f_disp)
+            col_pk2.metric("Forest Cover (% of Land)", cov_disp)
+            col_pk3.metric("Naturally Regenerating Share", nat_disp)
+            col_pk4.metric("Planted Forest Share", plant_disp)
+
+            col_prof_l, col_prof_r = st.columns([0.65, 0.35])
+            with col_prof_l:
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                fig_prof_trend = plot_country_profile_trend(profile)
+                st.plotly_chart(fig_prof_trend, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            with col_prof_r:
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                fig_prof_donut = plot_country_natural_vs_planted_donut(profile)
+                st.plotly_chart(fig_prof_donut, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # Milestone Historical Table
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.markdown(f"#### 📅 Reported Milestone Observations for {profile['name']} (No Synthetic Interpolation)")
+            if not profile['milestones_df'].empty:
+                st.dataframe(profile['milestones_df'].fillna("-"), use_container_width=True)
+            else:
+                st.info("No milestone observations found.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Selected Period Performance
+            pchg = profile.get('period_change', {})
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.markdown(f"#### ⏱️ Selected Period Performance ({baseline_year} → {selected_year})")
+            if pchg.get('is_available'):
+                col_pc1, col_pc2, col_pc3, col_pc4 = st.columns(4)
+                col_pc1.metric(f"Forest in {baseline_year}", f"{pchg['start_forest_mha']:,.2f} M ha")
+                col_pc2.metric(f"Forest in {selected_year}", f"{pchg['end_forest_mha']:,.2f} M ha")
+                col_pc3.metric("Net Period Change", f"{pchg['abs_change_mha']:+,.2f} M ha")
+                pct_str = f"{pchg['pct_change']:+.2f}%" if pchg.get('pct_change') is not None else "N/A"
+                col_pc4.metric("Relative Percentage Change", pct_str, f"{pchg['annual_rate_mha_yr']:+,.4f} M ha/yr")
+            else:
+                st.info(pchg.get('message', 'Period change not available.'))
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Interval Rates for Country
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.markdown(f"#### 📊 Annual Change Rates Across Reporting Intervals (from Intervals_2026-10-16.csv)")
+            if not profile['intervals_df'].empty:
+                st.dataframe(profile['intervals_df'].fillna("Not reported"), use_container_width=True)
+                st.caption("ℹ️ Units are expressed in 1,000 hectares per year (1,000 ha/yr).")
+            else:
+                st.info(f"No interval rate records reported for {profile['name']}.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Four Profile Cards: Degradation, Restoration, NWFP, Policy
+            col_card_1, col_card_2 = st.columns(2)
+            with col_card_1:
+                # Degradation
+                deg = profile.get('degradation', {})
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                st.markdown("#### 🍂 Forest Degradation Monitoring")
+                st.markdown(f"- **National Definition:** {deg.get('has_definition', 'Not reported')}")
+                st.markdown(f"- **Definition Details:** {deg.get('definition_text', 'Not reported')}")
+                st.markdown(f"- **Criteria Applied:** {deg.get('criteria', 'Not reported')}")
+                st.markdown(f"- **Monitors Degradation:** {deg.get('monitors', 'Not reported')}")
+                st.markdown(f"- **Methods Applied:** {deg.get('methods', 'Not reported')}")
+                st.markdown(f"- **Monitoring Scale:** {deg.get('scale', 'Not reported')}")
+                st.markdown(f"- **Latest Assessment Year:** {deg.get('assessment_year', 'Not reported')}")
+                st.markdown(f"- **Degraded Forest Area Reported:** {deg.get('degraded_area_reported', 'Not reported')}")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                # Non-Wood Forest Products
+                nwfp_items = profile.get('nwfp_products', [])
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                st.markdown("#### 🍄 Top Non-Wood Forest Products (NWFP)")
+                if nwfp_items:
+                    st.dataframe(pd.DataFrame(nwfp_items), use_container_width=True)
+                else:
+                    st.info(f"No specific NWFP products reported for {profile['name']}.")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            with col_card_2:
+                # Restoration
+                rest = profile.get('restoration', {})
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                st.markdown("#### 🌱 Forest Restoration Commitments")
+                st.markdown(f"- **Formal Commitment:** {rest.get('commitment', 'Not reported')}")
+                st.markdown(f"- **Legal Mandate:** {rest.get('law_mandate', 'Not reported')}")
+                st.markdown(f"- **National Definition:** {rest.get('definition', 'Not reported')}")
+                st.markdown(f"- **Areas in Need of Restoration:** {rest.get('areas_in_need', 'Not reported')}")
+                st.markdown(f"- **Restoration Targets:** {rest.get('targets', 'Not reported')}")
+                st.markdown(f"- **Hectares Restored to Date:** {rest.get('ha_restored', 'Not reported')}")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                # Policy & Governance
+                pol = profile.get('policy', {})
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                st.markdown("#### 📜 Forest Governance & Policy Framework")
+                st.markdown(f"- **National SFM Policy:** {pol.get('national_policy_sfm', 'Not reported')}")
+                st.markdown(f"- **Sub-National SFM Policy:** {pol.get('subnational_policy_sfm', 'Not reported')}")
+                st.markdown(f"- **National SFM Legislation:** {pol.get('national_legislation_sfm', 'Not reported')}")
+                st.markdown(f"- **Stakeholder Participation Platform:** {pol.get('stakeholder_platform', 'Not reported')}")
+                st.markdown(f"- **Wood Traceability System:** {pol.get('traceability_system', 'Not reported')}")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # Tiers Confidence
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.markdown(f"#### 🏅 Data Confidence Tiers (from Tiers_2026-10-16.csv)")
+            tiers = profile.get('tiers', {})
+            col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+            col_t1.metric("Forest Area Status Tier", tiers.get('forest_area_status', 'Not reported'))
+            col_t2.metric("Forest Area Trend Tier", tiers.get('forest_area_trend', 'Not reported'))
+            col_t3.metric("Growing Stock Tier", tiers.get('growing_stock_status', 'Not reported'))
+            col_t4.metric("Biomass Status Tier", tiers.get('biomass_status', 'Not reported'))
+            st.markdown('</div>', unsafe_allow_html=True)
+
+
+    # --------------------------------------------------------------------------
+    # TAB 4: SUMMARY REPORT & DOWNLOADS
+    # --------------------------------------------------------------------------
+    with tab_export:
+        st.markdown("### 📑 Downloadable Research Synthesis Report & Filtered Datasets")
+        st.write(
+            "Export tailored research artifacts, including a synthesized methodology and findings report, "
+            "as well as filtered research tables in CSV format for offline statistical modeling and verification."
+        )
+
+        # Generate Synthesis Markdown Report
+        report_findings = get_research_question_findings(df_fra, df_intervals, df_deg, df_rest, df_pol, df_tiers, baseline_year, selected_year, regions_filter)
+        dist_export = get_statistical_distribution_metrics(df_fra, selected_year, regions_filter)
+        reg_export = get_regional_comparison_metrics(df_fra, 1990, 2025)
+        int_export = get_interval_dynamics_summary(df_intervals)
+
+        summary_report_text = f"""# GLOBAL FOREST RESOURCES ASSESSMENT (FRA) RESEARCH SUMMARY REPORT
+**Generated:** 2026-10-23
+**Scope:** Stage 3: Research Insights, Statistical Analysis & Country Validation
+**Data Source:** Food and Agriculture Organization of the United Nations (FAO FRA) Official Release (October 16, 2026)
+
+---
+
+## 1. Active Evaluation Scope & Filters
+- **Geographic Filter:** Region: {selected_region} | Country: {selected_country}
+- **Milestone Period:** Baseline: {baseline_year} → Target Year: {selected_year}
+- **Countries Evaluated:** {kpis['countries_count']} Countries & Territories
+- **Total Forest Area in {selected_year}:** {kpis['forest_area_display']}
+- **Net Change ({baseline_year}→{selected_year}):** {kpis['change_display']} ({kpis['change_subtext']})
+
+---
+
+## 2. Answers to the 8 Core Research Questions
+
+### Q1. Global Forest Area Change (1990–2025)
+- **Formula:** ΔArea = Area_2025 - Area_1990; %Δ = (ΔArea / Area_1990) * 100
+- **Empirical Finding:** {report_findings['Q1']['interpretation']}
+
+### Q2. Countries with Largest Forest Areas (2025)
+- **Formula:** Share % = (Country Area / Global Total Area) * 100
+- **Empirical Finding:** {report_findings['Q2']['interpretation']}
+
+### Q3. Largest Absolute Increases and Decreases ({baseline_year}→{selected_year})
+- **Formula:** Absolute Change = Area_{selected_year} - Area_{baseline_year}
+- **Empirical Finding:** {report_findings['Q3']['interpretation']}
+
+### Q4. Forest Area Differences Across the Six FAO Regions
+- **Formula:** Regional Total = Sum of Countries in Region; Cover % = Forest Area / Land Area * 100
+- **Empirical Finding:** {report_findings['Q4']['interpretation']}
+
+### Q5. Expansion, Afforestation and Deforestation Rates Across Intervals
+- **Formula:** Annual Rate = Reported Interval Average (1,000 ha/year)
+- **Empirical Finding:** {report_findings['Q5']['interpretation']}
+
+### Q6. Naturally Regenerating vs. Planted Forests
+- **Formula:** Naturally Regenerating Share % + Planted Forest Share % ≈ 100% (No Double Counting)
+- **Empirical Finding:** {report_findings['Q6']['interpretation']}
+
+### Q7. Completeness and Reliability of Observations
+- **Formula:** Official Flag A % = Count(Flag A) / Total Nations * 100; Tier 3 High % = Count(Tier 3) / Total * 100
+- **Empirical Finding:** {report_findings['Q7']['interpretation']}
+
+### Q8. Forest Restoration and Policy Governance Indicators
+- **Formula:** Adoption Rate % = Count(Indicator == 'Yes') / Total Evaluated * 100
+- **Empirical Finding:** {report_findings['Q8']['interpretation']}
+
+---
+
+## 3. Parametric & Non-Parametric Distribution Statistics ({selected_year})
+- **Count:** {dist_export.get('count', 0)} nations
+- **Mean Area:** {dist_export.get('mean_mha', 0):,.2f} M ha
+- **Median Area:** {dist_export.get('median_mha', 0):,.2f} M ha
+- **Standard Deviation:** {dist_export.get('std_mha', 0):,.2f} M ha
+- **Interquartile Range (IQR):** {dist_export.get('iqr_mha', 0):,.2f} M ha (Q1: {dist_export.get('q25_mha', 0):,.2f} M ha, Q3: {dist_export.get('q75_mha', 0):,.2f} M ha)
+- **Tukey Upper Outlier Fence:** {dist_export.get('upper_fence_mha', 0):,.2f} M ha
+- **Fisher-Pearson Skewness:** {dist_export.get('skewness', 0):+.2f} (Extreme right-skewness)
+
+---
+
+## 4. Scientific Methodology Caveats & Definitions
+1. **Net Forest-Area Change vs. Gross Deforestation:** Net forest-area change is the algebraic sum of gross forest reduction, afforestation, and natural expansion. A net loss does not equal gross deforestation alone.
+2. **Deforestation Definition:** Under FAO FRA, deforestation is the conversion of forest to other land use or long-term reduction of tree canopy cover below 10%. It does not include temporary canopy loss in forests managed for timber where regeneration occurs.
+3. **Satellite Tree-Cover Loss Distinction:** Satellite-detected tree-cover loss (e.g. Global Forest Watch) measures annual canopy clearance irrespective of land-use change, including forestry harvesting and fires. FAO FRA measures legal and administrative land-use status.
+4. **Data Reliability Flags & Tiers:** Tier 1 represents expert models and desk extrapolations; Tier 2 represents partial field inventories; Tier 3 represents wall-to-wall satellite remote sensing and national field sample inventories.
+"""
+
+        col_d_rep, _ = st.columns([0.4, 0.6])
+        with col_d_rep:
+            st.download_button(
+                label="📥 Download Research Summary Report (.md)",
+                data=summary_report_text,
+                file_name=f"forest_research_summary_report_{selected_year}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+
+        with st.expander("📄 Preview Generated Research Summary Report"):
+            st.markdown(summary_report_text)
+
+        st.markdown("<hr style='border: 1px solid #ebf2ed; margin: 1.5rem 0;'>", unsafe_allow_html=True)
+
+        st.markdown("#### 📊 Download Filtered Research Tables (CSV Format)")
+        col_csv1, col_csv2, col_csv3, col_csv4 = st.columns(4)
+
+        with col_csv1:
+            if not reg_export.empty:
+                csv_reg = reg_export.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Regional Dynamics CSV",
+                    data=csv_reg,
+                    file_name="regional_forest_dynamics_1990_2025.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+        with col_csv2:
+            if not int_export['summary_table'].empty:
+                csv_int = int_export['summary_table'].to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Interval Rates CSV",
+                    data=csv_int,
+                    file_name="reporting_intervals_annual_rates.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+        with col_csv3:
+            if not dist_export['outliers_df'].empty:
+                csv_out = dist_export['outliers_df'].to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Outlier Nations CSV",
+                    data=csv_out,
+                    file_name=f"forest_area_outliers_{selected_year}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+        with col_csv4:
+            if profile['found'] and not profile['milestones_df'].empty:
+                csv_prof = profile['milestones_df'].to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label=f"📥 {profile['name']} Profile CSV",
+                    data=csv_prof,
+                    file_name=f"{profile['name'].replace(' ', '_')}_milestones.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+
 # 9. Footer
 st.markdown("""
 <div class="footer-bar">
-    Global Forest Area Change and Forest Sustainability Analysis • College Data Visualization Project (Stage 2)<br>
+    Global Forest Area Change and Forest Sustainability Analysis • College Data Visualization Project (Stage 3)<br>
     Data Source: Food and Agriculture Organization of the United Nations (FAO FRA) • Built with Python, Streamlit & Plotly
 </div>
 """, unsafe_allow_html=True)
+
